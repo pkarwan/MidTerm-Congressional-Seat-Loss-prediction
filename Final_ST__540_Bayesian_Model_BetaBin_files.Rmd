@@ -1,0 +1,931 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Simple Linear Regression Model
+```{r}
+library(rjags)
+flip<-c(48,14,26,4,8,54,-4,-8,31,64,13,42)
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+p_rate<-c(.54,.49,.42,.63,.58,.46,.66,.63,.38,.45,.44,.41)
+c_rate<-c(.35,.29,.29,.42,.26,.23,.42,.5,.21,.13,.16,.21)
+sc_rate<-c(.45,.45,.46,.54,.47,.42,.5,.5,.4,.36,.3,.37)
+n<-length(loss)
+
+#Scaling
+flip<-as.vector(scale(flip))
+loss<-as.vector(scale(loss))
+races<-as.vector(scale(races))
+p_rate<-as.vector(scale(p_rate))
+c_rate<-as.vector(scale(c_rate))
+sc_rate<-as.vector(scale(sc_rate))
+
+#Evaluating Normality
+qqnorm(flip,main='Q-Q Plot for Normality',col='steelblue',cex=1.25,pch=20)
+qqline(flip)
+
+#Evaluate correlation of input variables
+mat.data<-c(p_rate,c_rate,sc_rate)
+mat1<-matrix(mat.data,ncol=3,byrow=FALSE)
+colnames(mat1)<-c("Executive","Legislative","Judicial")
+library(corrplot)
+corrplot(cor(mat1),title="Correlation of Approval Ratings Between Branches",addCoef.col=TRUE,tl.srt=60,mar=c(0,0,5,0),tl.col="black")
+
+#Model 1
+data<-list(flip=flip,p_rate=p_rate,c_rate=c_rate,sc_rate=sc_rate,n=n)
+model_string<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta2*p_rate[i] + beta3*c_rate[i] + beta4*sc_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta2 ~  dnorm(0, 0.001)
+   beta3 ~  dnorm(0, 0.001)
+   beta4 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta2=rnorm(1),beta3=rnorm(1),beta4=rnorm(1),tau=10)
+model<-jags.model(model_string,data=data,inits=inits,n.chains=2,quiet=TRUE)
+#Burn-in
+update(model,10000,progress.bar="none")
+#Post burn-in
+params<-c("beta1","beta2","beta3","beta4","sigma")
+samples<- coda.samples(model,variable.names=params,n.iter=20000,progress.bar="none")
+
+summary(samples)
+plot(samples)
+
+autocorr.plot(samples[[1]])
+autocorr(samples[[1]],lag=5)
+effectiveSize(samples)
+gelman.diag(samples)
+geweke.diag(samples[[1]])
+
+b1 <- c(samples[[1]][,1],samples[[2]][,1])
+b2 <- c(samples[[1]][,2],samples[[2]][,2])
+b3 <- c(samples[[1]][,3],samples[[2]][,3])
+b4 <- c(samples[[1]][,4],samples[[2]][,4])
+
+d1 <- density(b1,from=-10,to=10)
+d2 <- density(b2,from=-10,to=10)
+d3 <- density(b3,from=-10,to=10)
+d4 <- density(b4,from=-10,to=10)
+
+mx <- max(c(d1$y,d2$y,d3$y,d4$y))
+
+plot(d1$x,d1$y,type="l",xlim=c(-3,2),ylim=c(0,mx),xlab=expression(beta),ylab="Posterior density",lwd=3.0,main="Posterior Distibution of Betas - Model 1")
+lines(d2$x,d2$y,lty=2,col="red",lwd=3.0)
+lines(d3$x,d3$y,lty=3,col="blue",lwd=3.0)
+lines(d4$x,d4$y,lty=4,col="green",lwd=3.0)
+
+legend("topright",c("Beta 0","Beta 1","Beta 2","Beta 3"),
+       bty="n",lty=c(1,2,3,4),cex=1.25,col=c("black","red","blue","green"),lwd=3.0)
+
+#Model 1 with alternate priors
+model_string2<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta2*p_rate[i] + beta3*c_rate[i] + beta4*sc_rate[i],tau)
+}
+   tau   ~  dgamma(0.01, 0.01) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dunif(-100,100) #Uniform independent priors
+   beta2 ~  dunif(-100,100)
+   beta3 ~  dunif(-100,100)
+   beta4 ~  dunif(-100,100)
+ }")
+
+inits<- list(beta1=rnorm(1),beta2=rnorm(1),beta3=rnorm(1),beta4=rnorm(1),tau=10)
+model2<-jags.model(model_string2,data=data,inits=inits,n.chains=2,quiet=TRUE)
+#Burn-in
+update(model2,10000,progress.bar="none")
+#Post burn-in
+params<-c("beta1","beta2","beta3","beta4","sigma")
+samples2<- coda.samples(model,variable.names=params,n.iter=20000,progress.bar="none")
+
+summary(samples2)
+plot(samples2)
+
+b1.2 <- c(samples2[[1]][,1],samples2[[2]][,1])
+b2.2 <- c(samples2[[1]][,2],samples2[[2]][,2])
+b3.2 <- c(samples2[[1]][,3],samples2[[2]][,3])
+b4.2 <- c(samples2[[1]][,4],samples2[[2]][,4])
+
+d1.2 <- density(b1.2,from=-10,to=10)
+d2.2 <- density(b2.2,from=-10,to=10)
+d3.2 <- density(b3.2,from=-10,to=10)
+d4.2 <- density(b4.2,from=-10,to=10)
+
+mx2 <- max(c(d1.2$y,d2.2$y,d3.2$y,d4.2$y))
+par(mfrow=c(1,1))
+plot(d1.2$x,d1.2$y,type="l",xlim=c(-3,2),ylim=c(0,mx),xlab=expression(beta),ylab="Posterior density",lwd=2.0,main="Posterior Distibution of Betas - Model 1 - \nUniform vs Gaussian Priors")
+lines(d2.2$x,d2.2$y,lty=2,col="red",lwd=2.0)
+lines(d3.2$x,d3.2$y,lty=3,col="blue",lwd=2.0)
+lines(d4.2$x,d4.2$y,lty=4,col="green",lwd=2.0)
+lines(d1$x,d1$y,lty=1,col="black",lwd=2.0)
+lines(d2$x,d2$y,lty=2,col="red",lwd=2.0)
+lines(d3$x,d3$y,lty=3,col="blue",lwd=2.0)
+lines(d4$x,d4$y,lty=4,col="green",lwd=2.0)
+
+legend("topright",c("Beta 0","Beta 1","Beta 2","Beta 3"),
+       bty="n",lty=c(1,2,3,4),cex=1.25,col=c("black","red","blue","green"),lwd=3.0)
+
+
+#Model 2
+
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+
+data2   <- list(loss=loss,races=races,p_rate=p_rate,c_rate=c_rate,sc_rate=sc_rate,n=n)
+params2 <- c("beta")
+
+model_string2 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i],races[i])
+      logit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.01)
+    beta[2] ~ dnorm(0,0.01)
+    beta[3] ~ dnorm(0,0.01)
+    beta[4] ~ dnorm(0,0.01)
+ }")
+
+model2 <- jags.model(model_string2,data = data2, n.chains=2,quiet=TRUE)
+update(model2, 10000, progress.bar="none")
+samples2 <- coda.samples(model2, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+summary(samples2)
+plot(samples2)
+
+b1 <- c(samples2[[1]][,1],samples2[[2]][,1])
+b2 <- c(samples2[[1]][,2],samples2[[2]][,2])
+b3 <- c(samples2[[1]][,3],samples2[[2]][,3])
+b4 <- c(samples2[[1]][,4],samples2[[2]][,4])
+
+d1 <- density(b1,from=-10,to=10)
+d2 <- density(b2,from=-10,to=10)
+d3 <- density(b3,from=-10,to=10)
+d4 <- density(b4,from=-10,to=10)
+
+mx <- max(c(d1$y,d2$y,d3$y,d4$y))
+
+plot(d1$x,d1$y,type="l",xlim=c(-3,2),ylim=c(0,mx),xlab=expression(beta),ylab="Posterior density",lwd=3.0)
+lines(d2$x,d2$y,lty=2,col="red",lwd=3.0)
+lines(d3$x,d3$y,lty=3,col="blue",lwd=3.0)
+lines(d4$x,d4$y,lty=4,col="green",lwd=3.0)
+
+legend("topright",c("Beta 0","Beta 1","Beta 2","Beta 3"),
+       bty="n",lty=c(1,2,3,4),cex=1.25,col=c("black","red","blue","green"),lwd=3.0)
+```
+Logistic Regression Models
+```{r}
+library(rjags)
+flip<-c(48,14,26,4,8,54,-4,-8,31,64,13,42)
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+p_rate<-c(.54,.49,.42,.63,.58,.46,.66,.63,.38,.45,.44,.41)
+c_rate<-c(.35,.29,.29,.42,.26,.23,.42,.5,.21,.13,.16,.21)
+sc_rate<-c(.45,.45,.46,.54,.47,.42,.5,.5,.4,.36,.3,.37)
+n<-length(loss)
+
+#Scaling
+flip<-as.vector(scale(flip))
+loss<-as.vector(scale(loss))
+races<-as.vector(scale(races))
+p_rate<-as.vector(scale(p_rate))
+c_rate<-as.vector(scale(c_rate))
+sc_rate<-as.vector(scale(sc_rate))
+```
+```{r}
+#Model 1
+data<-list(flip=flip,p_rate=p_rate,c_rate=c_rate,sc_rate=sc_rate,n=n)
+model_string<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta2*p_rate[i] + beta3*c_rate[i] + beta4*sc_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta2 ~  dnorm(0, 0.001)
+   beta3 ~  dnorm(0, 0.001)
+   beta4 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta2=rnorm(1),beta3=rnorm(1),beta4=rnorm(1),tau=10)
+model<-jags.model(model_string,data=data,inits=inits,n.chains=2,quiet=TRUE)
+#Burn-in
+update(model,10000,progress.bar="none")
+#Post burn-in
+params<-c("beta1","beta2","beta3","beta4","sigma")
+samples<- coda.samples(model,variable.names=params,n.iter=20000,progress.bar="none")
+
+summary.model1 <- summary(samples)
+plot(samples)
+```
+
+
+```{r }
+#Evaluate correlation of input variables
+mat.data<-c(p_rate,c_rate,sc_rate)
+mat1<-matrix(mat.data,ncol=3,byrow=FALSE)
+colnames(mat1)<-c("Executive","Legislative","Judicial")
+library(corrplot)
+corrplot(cor(mat1),title="Correlation of Approval Ratings Between Branches",addCoef.col=TRUE,tl.srt=60,mar=c(0,0,5,0),tl.col="black")
+
+```
+```{r}
+ESS1 <- effectiveSize(samples)
+ESS1[which.min(ESS1)]
+
+GEL1 <- gelman.diag(samples)
+GEL1
+
+geweke1 <- geweke.diag(samples)
+geweke1
+
+stat1 <- summary(samples)["statistics"]
+stat1
+
+quant1 <- summary(samples)["quantiles"]
+quant1
+
+#Calculate DIC
+DIC1 <- dic.samples(model,n.iter=20000,n.thin=10)
+DIC1
+```
+
+```{r}
+#Model 2
+
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+
+data2   <- list(loss=loss,races=races,p_rate=p_rate,c_rate=c_rate,sc_rate=sc_rate,n=n)
+params2 <- c("beta")
+
+model_string2 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i],races[i])
+      logit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.01)
+    beta[2] ~ dnorm(0,0.01)
+    beta[3] ~ dnorm(0,0.01)
+    beta[4] ~ dnorm(0,0.01)
+ }")
+
+model2 <- jags.model(model_string2,data = data2, n.chains=2,quiet=TRUE)
+update(model2, 10000, progress.bar="none")
+samples2 <- coda.samples(model2, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+summary(samples2)
+plot(samples2)
+```
+```{r}
+ESS2 <- effectiveSize(samples2)
+ESS2[which.min(ESS2)]
+
+GEL2 <- gelman.diag(samples2)
+GEL2
+
+geweke2 <- geweke.diag(samples2)
+geweke2
+
+stat2 <- summary(samples2)["statistics"]
+stat2
+
+quant2 <- summary(samples2)["quantiles"]
+quant2
+
+#Calculate DIC
+DIC2 <- dic.samples(model2,n.iter=20000,n.thin=10)
+DIC2
+```
+
+```{r}
+b1 <- c(samples2[[1]][,1],samples2[[2]][,1])
+b2 <- c(samples2[[1]][,2],samples2[[2]][,2])
+b3 <- c(samples2[[1]][,3],samples2[[2]][,3])
+b4 <- c(samples2[[1]][,4],samples2[[2]][,4])
+
+d1 <- density(b1,from=-10,to=10)
+d2 <- density(b2,from=-10,to=10)
+d3 <- density(b3,from=-10,to=10)
+d4 <- density(b4,from=-10,to=10)
+
+mx <- max(c(d1$y,d2$y,d3$y,d4$y))
+
+plot(d1$x,d1$y,type="l",xlim=c(-3,2),ylim=c(0,mx),xlab=expression(beta),ylab="Posterior density",lwd=3.0)
+lines(d2$x,d2$y,lty=2,col="red",lwd=3.0)
+lines(d3$x,d3$y,lty=3,col="blue",lwd=3.0)
+lines(d4$x,d4$y,lty=4,col="green",lwd=3.0)
+
+legend("topright",c("Beta 0","Beta 1","Beta 2","Beta 3"),
+       bty="n",lty=c(1,2,3,4),cex=1.25,col=c("black","red","blue","green"),lwd=3.0)
+```
+```{r}
+params3 <- c("beta")
+
+model_string3 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i],races[i])
+      logit(p[i]) <- max(-20,min(20,beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]))
+    }
+   # Priors
+    beta[1] ~ dunif(-5,5)
+    beta[2] ~ dunif(-5,5)
+    beta[3] ~ dunif(-5,5)
+    beta[4] ~ dunif(-5,5)
+ }")
+
+model3 <- jags.model(model_string3,data = data2, n.chains=2,quiet=TRUE)
+update(model3, 10000, progress.bar="none")
+samples3 <- coda.samples(model3, variable.names=params3, thin=5, n.iter=20000, progress.bar="none")
+
+summary(samples3)
+plot(samples3)
+```
+```{r}
+ESS3 <- effectiveSize(samples3)
+ESS3[which.min(ESS3)]
+
+GEL3 <- gelman.diag(samples3)
+GEL3
+
+geweke3 <- geweke.diag(samples3)
+geweke3
+
+stat3 <- summary(samples3)["statistics"]
+stat3
+
+quant3 <- summary(samples3)["quantiles"]
+quant3
+
+#Calculate DIC
+DIC3 <- dic.samples(model3,n.iter=20000,n.thin=10)
+DIC3
+```
+
+```{r}
+b1 <- c(samples3[[1]][,1],samples3[[2]][,1])
+b2 <- c(samples3[[1]][,2],samples3[[2]][,2])
+b3 <- c(samples3[[1]][,3],samples3[[2]][,3])
+b4 <- c(samples3[[1]][,4],samples3[[2]][,4])
+
+d1 <- density(b1,from=-10,to=10)
+d2 <- density(b2,from=-10,to=10)
+d3 <- density(b3,from=-10,to=10)
+d4 <- density(b4,from=-10,to=10)
+
+mx <- max(c(d1$y,d2$y,d3$y,d4$y))
+
+plot(d1$x,d1$y,type="l",xlim=c(-3,2),ylim=c(0,mx),xlab=expression(beta),ylab="Posterior density",lwd=3.0)
+lines(d2$x,d2$y,lty=2,col="red",lwd=3.0)
+lines(d3$x,d3$y,lty=3,col="blue",lwd=3.0)
+lines(d4$x,d4$y,lty=4,col="green",lwd=3.0)
+
+legend("topright",c("Beta 0","Beta 1","Beta 2","Beta 3"),
+       bty="n",lty=c(1,2,3,4),cex=1.25,col=c("black","red","blue","green"),lwd=3.0)
+```
+
+
+```{r}
+model_string4 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i], races[i])
+      probit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.01)
+    beta[2] ~ dnorm(0,0.01)
+    beta[3] ~ dnorm(0,0.01)
+    beta[4] ~ dnorm(0,0.01)
+ }")
+
+model4 <- jags.model(model_string4,data = data2, n.chains=2,quiet=TRUE)
+update(model4, 10000, progress.bar="none")
+samples4 <- coda.samples(model4, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+summary(samples4)
+plot(samples4)
+```
+
+```{r}
+b1 <- c(samples4[[1]][,1],samples4[[2]][,1])
+b2 <- c(samples4[[1]][,2],samples4[[2]][,2])
+b3 <- c(samples4[[1]][,3],samples4[[2]][,3])
+b4 <- c(samples4[[1]][,4],samples4[[2]][,4])
+
+d1 <- density(b1,from=-10,to=10)
+d2 <- density(b2,from=-10,to=10)
+d3 <- density(b3,from=-10,to=10)
+d4 <- density(b4,from=-10,to=10)
+
+mx <- max(c(d1$y,d2$y,d3$y,d4$y))
+
+plot(d1$x,d1$y,type="l",xlim=c(-3,2),ylim=c(0,mx),xlab=expression(beta),ylab="Posterior density",lwd=3.0)
+lines(d2$x,d2$y,lty=2,col="red",lwd=3.0)
+lines(d3$x,d3$y,lty=3,col="blue",lwd=3.0)
+lines(d4$x,d4$y,lty=4,col="green",lwd=3.0)
+
+legend("topright",c("Beta 0","Beta 1","Beta 2","Beta 3"),
+       bty="n",lty=c(1,2,3,4),cex=1.25,col=c("black","red","blue","green"),lwd=3.0)
+```
+```{r}
+ESS4 <- effectiveSize(samples4)
+ESS4[which.min(ESS4)]
+
+GEL4 <- gelman.diag(samples4)
+GEL4
+
+geweke4 <- geweke.diag(samples4)
+geweke4
+
+stat4 <- summary(samples4)["statistics"]
+stat4
+
+quant4 <- summary(samples4)["quantiles"]
+quant4
+
+#Calculate DIC
+DIC4 <- dic.samples(model4,n.iter=20000,n.thin=10)
+DIC4
+
+```
+```{r}
+autocorr.plot(samples4)
+```
+```{r}
+out <- summary(samples4)$statistics
+rownames(out) <- c('intercept', 'p_rate','c_rate','sc_rate')
+out
+```
+```{r}
+beta_hat <- out[,1]
+beta_hat
+```
+```{r}
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+
+data2   <- list(loss=loss,races=races,p_rate=p_rate,c_rate=c_rate,sc_rate=sc_rate,n=n)
+params2 <- c("beta")
+
+model_string5 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i],races[i])
+      cloglog(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.01)
+    beta[2] ~ dnorm(0,0.01)
+    beta[3] ~ dnorm(0,0.01)
+    beta[4] ~ dnorm(0,0.01)
+ }")
+
+model5 <- jags.model(model_string5,data = data2, n.chains=2,quiet=TRUE)
+update(model5, 10000, progress.bar="none")
+samples5 <- coda.samples(model5, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+summary(samples5)
+plot(samples5)
+```
+```{r}
+ESS5 <- effectiveSize(samples5)
+ESS5[which.min(ESS5)]
+
+GEL5 <- gelman.diag(samples5)
+GEL5
+
+geweke5 <- geweke.diag(samples5)
+geweke5
+
+stat5 <- summary(samples5)["statistics"]
+stat5
+
+quant5 <- summary(samples5)["quantiles"]
+quant5
+
+#Calculate DIC
+DIC5 <- dic.samples(model5,n.iter=20000,n.thin=10)
+DIC5
+```
+```{r}
+
+# Prior sensitivity analysis
+model_string6 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i], races[i])
+      probit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.0001)
+    beta[2] ~ dnorm(0,0.0001)
+    beta[3] ~ dnorm(0,0.0001)
+    beta[4] ~ dnorm(0,0.0001)
+ }")
+
+model_string7 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i], races[i])
+      probit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.1)
+    beta[2] ~ dnorm(0,0.1)
+    beta[3] ~ dnorm(0,0.1)
+    beta[4] ~ dnorm(0,0.1)
+ }")
+
+model6 <- jags.model(model_string6,data = data2, n.chains=2,quiet=TRUE)
+update(model6, 10000, progress.bar="none")
+samples6 <- coda.samples(model6, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+stat6 <- summary(samples6)["statistics"]
+stat4
+stat6
+
+model7 <- jags.model(model_string7,data = data2, n.chains=2,quiet=TRUE)
+update(model7, 10000, progress.bar="none")
+samples7 <- coda.samples(model7, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+stat7 <- summary(samples7)["statistics"]
+stat7
+```
+Cross Validation between Model 1 and Model 4
+```{r}
+library(rjags)
+flip<-c(48,14,26,4,8,54,-4,-8,31,64,13,42)
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+p_rate<-c(.54,.49,.42,.63,.58,.46,.66,.63,.38,.45,.44,.41)
+c_rate<-c(.35,.29,.29,.42,.26,.23,.42,.5,.21,.13,.16,.21)
+sc_rate<-c(.45,.45,.46,.54,.47,.42,.5,.5,.4,.36,.3,.37)
+n<-length(loss)
+
+#Split data into folds for cross validation
+set.seed(24)
+fold <- seq(1:12)
+fold <- sample(fold)
+fold
+
+#Set up matrices for summary stats 
+Y_mean   <- matrix(NA,12,2)
+Y_median <- matrix(NA,12,2)
+Y_low    <- matrix(NA,12,2)
+Y_high   <- matrix(NA,12,2)
+ 
+expit <- function(x){1/(1+exp(-x))}
+
+#Set up for running 6 times using all data not in fold f each time. 
+for (f in 1:12){
+   data   <- list(flip=flip[fold!=f],p_rate=p_rate[fold!=f],c_rate=c_rate[fold!=f],
+                  sc_rate=sc_rate[fold!=f],n=sum(fold!=f))
+   data2 <- list(loss=loss[fold!=f],races=races[fold!=f],p_rate=p_rate[fold!=f],
+                 c_rate=c_rate[fold!=f],sc_rate=sc_rate[fold!=f],n=sum(fold!=f))
+   params <- c("beta1","beta2","beta3","beta4","sigma")
+   params2 <- c("beta")
+   
+#Model 1
+m1<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta2*p_rate[i] + beta3*c_rate[i] + beta4*sc_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta2 ~  dnorm(0, 0.001)
+   beta3 ~  dnorm(0, 0.001)
+   beta4 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta2=rnorm(1),beta3=rnorm(1),beta4=rnorm(1),tau=10)
+model1<-jags.model(m1,data=data,inits=inits,n.chains=1,quiet=TRUE)
+#Burn-in
+update(model1,10000,progress.bar="none")
+#Post burn-in
+b1<- coda.samples(model1,variable.names=params,n.iter=20000,progress.bar="none") [[1]]
+
+m2 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i], races[i])
+      probit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dnorm(0,0.01)
+    beta[2] ~ dnorm(0,0.01)
+    beta[3] ~ dnorm(0,0.01)
+    beta[4] ~ dnorm(0,0.01)
+ }")
+
+model2 <- jags.model(m2,data = data2, n.chains=1,quiet=TRUE)
+update(model2, 10000, progress.bar="none")
+b2 <- coda.samples(model2, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")[[1]]
+
+#Make predictions
+ for(i in 1:12){if(fold[i]==f){
+      Y_mod1        <- rnorm(nrow(b1),b1[,1] + b1[,2]*p_rate[i] + b1[,3]*c_rate[i] + b1[,4]*sc_rate[i], b1[,5])
+      Y_mean[i,1]   <- mean(Y_mod1)
+      Y_median[i,1] <- median(Y_mod1)
+      Y_low[i,1]    <- quantile(Y_mod1,0.025)
+      Y_high[i,1]   <- quantile(Y_mod1,0.975)
+      
+      Y_mod2        <- rbinom(length(b2),races[i],pnorm(b2[,1] + b2[,2]*p_rate[i] + b2[,3]*c_rate[i] + b2[,4]*sc_rate[i]))
+      Y_mean[i,2]   <- mean(Y_mod2)
+      Y_median[i,2] <- median(Y_mod2)
+      Y_low[i,2]    <- quantile(Y_mod2,0.025)
+      Y_high[i,2]   <- quantile(Y_mod2,0.975)
+   }} 
+}
+
+#Calculate summary statistics
+ y     <- cbind(flip,loss) # Make data the same size/format as predictions
+ BIAS  <- colMeans(Y_mean-y)
+ MSE   <- colMeans((Y_mean-y)^2)
+ MAD   <- colMeans(abs(Y_mean-y))
+ COV   <- colMeans( (Y_low <= y) & (y <= Y_high))
+ WIDTH <- colMeans(Y_high-Y_low)
+ 
+cv_summary  <- cbind(BIAS,MSE,MAD,COV,WIDTH)
+cv_summary    <- round(cv_summary,2)
+cv_summary_table <- as.table(cv_summary)
+rownames(cv_summary_table) <- c("Normal","Beta-Binom")
+cv_summary_table
+
+plot(flip,Y_mean[,1],pch=19,
+       xlim=c(-10,80),ylim=c(-10,80),
+       main="Cross Validation Predictions vs. Observed Values",xlab="Observed",ylab="Predicted")
+  points(loss,Y_mean[,2],col=2,pch=19)
+  abline(0,1)
+  legend("topleft",c("Model 1","Model 2"),pch=19,col=1:2,bty="n")
+```
+Cross Validation Between Acceptance Rate Variables
+```{r}
+#Split data into folds for cross validation
+set.seed(67)
+fold <- seq(1:12)
+fold <- sample(fold)
+fold
+
+#Set up matrices for summary stats 
+Y_mean   <- matrix(NA,12,3)
+Y_median <- matrix(NA,12,3)
+Y_low    <- matrix(NA,12,3)
+Y_high   <- matrix(NA,12,3)
+
+#Set up for running 6 times using all data not in fold f each time. 
+for (f in 1:12){
+   data3   <- list(flip=flip[fold!=f],p_rate=p_rate[fold!=f],n=sum(fold!=f))
+   data4 <- list(flip=flip[fold!=f],c_rate=c_rate[fold!=f],n=sum(fold!=f))
+   data5 <-list(flip=flip[fold!=f],sc_rate=sc_rate[fold!=f],n=sum(fold!=f))
+   params3 <- c("beta1","beta2","sigma")
+   params4 <- c("beta1","beta3","sigma")
+   params5 <- c("beta1","beta4","sigma")
+   
+#Model 3
+m3<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta2*p_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta2 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta2=rnorm(1),tau=10)
+model3<-jags.model(m3,data=data3,inits=inits,n.chains=1,quiet=TRUE)
+#Burn-in
+update(model3,10000,progress.bar="none")
+#Post burn-in
+b3<- coda.samples(model3,variable.names=params3,n.iter=20000,progress.bar="none") [[1]]
+
+#Model 4
+m4<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta3*c_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta3 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta3=rnorm(1),tau=10)
+model4<-jags.model(m4,data=data4,inits=inits,n.chains=1,quiet=TRUE)
+#Burn-in
+update(model4,10000,progress.bar="none")
+#Post burn-in
+b4<- coda.samples(model4,variable.names=params4,n.iter=20000,progress.bar="none") [[1]]
+
+#Model 5
+m5<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta4*sc_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta4 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta4=rnorm(1),tau=10)
+model5<-jags.model(m5,data=data5,inits=inits,n.chains=1,quiet=TRUE)
+#Burn-in
+update(model5,10000,progress.bar="none")
+#Post burn-in
+b5<- coda.samples(model5,variable.names=params5,n.iter=20000,progress.bar="none") [[1]]
+
+#Make predictions
+ for(i in 1:12){if(fold[i]==f){
+      Y_mod3        <- rnorm(nrow(b3),b3[,1] + b3[,2]*p_rate[i], b3[,3])
+      Y_mean[i,1]   <- mean(Y_mod3)
+      Y_median[i,1] <- median(Y_mod3)
+      Y_low[i,1]    <- quantile(Y_mod3,0.025)
+      Y_high[i,1]   <- quantile(Y_mod3,0.975)
+      
+      Y_mod4        <- rnorm(nrow(b4),b4[,1] + b4[,2]*c_rate[i], b4[,3])
+      Y_mean[i,2]   <- mean(Y_mod4)
+      Y_median[i,2] <- median(Y_mod4)
+      Y_low[i,2]    <- quantile(Y_mod4,0.025)
+      Y_high[i,2]   <- quantile(Y_mod4,0.975)
+      
+      Y_mod5        <- rnorm(nrow(b5),b5[,1] + b5[,2]*sc_rate[i], b5[,3])
+      Y_mean[i,3]   <- mean(Y_mod5)
+      Y_median[i,3] <- median(Y_mod5)
+      Y_low[i,3]    <- quantile(Y_mod5,0.025)
+      Y_high[i,3]   <- quantile(Y_mod5,0.975)
+   }} 
+}
+
+#Calculate summary statistics
+ y2     <- cbind(flip,flip,flip) # Make data the same size/format as predictions
+ BIAS  <- colMeans(Y_mean-y2)
+ MSE   <- colMeans((Y_mean-y2)^2)
+ MAD   <- colMeans(abs(Y_mean-y2))
+ COV   <- colMeans( (Y_low <= y2) & (y2 <= Y_high))
+ WIDTH <- colMeans(Y_high-Y_low)
+ 
+cv_summary2  <- cbind(BIAS,MSE,MAD,COV,WIDTH)
+cv_summary2    <- round(cv_summary2,2)
+cv_summary_table2 <- as.table(cv_summary2)
+rownames(cv_summary_table2) <- c( "President", "Congress", "SC")
+cv_summary_table2
+
+cv_summary3 <- rbind(cv_summary[1,],cv_summary2)
+cv_summary_table3 <- as.table(cv_summary3)
+rownames(cv_summary_table3) <- c("Normal Model", "P Rate Only", "C Rate Only", "SC Rate Only")
+cv_summary_table3
+
+testTable <- cbind(Y_mean,flip)
+
+plot(flip,Y_mean[,1],pch=19,
+       xlim=c(-10,80),ylim=c(-10,80),
+       main="Predictions from Single Approval Rating Linear Models",xlab="Observed",ylab="Predicted")
+  points(flip,Y_mean[,2],col=2,pch=19)
+  points(flip,Y_mean[,3],col=3,pch=19)
+  abline(0,1)
+  legend("topleft",c("Presidential","Congressional", "Supreme Court"),pch=19,col=1:3,bty="n")
+```
+Posterior Predictive Checks for Simple Linear Regression
+```{r}
+library(rjags)
+flip<-c(48,14,26,4,8,54,-4,-8,31,64,13,42)
+loss<-c(48,14,26,4,8,54,0,0,31,64,13,42)
+races<-c(192,292,192,181,175,258,207,221,233,257,201,241)
+p_rate<-c(.54,.49,.42,.63,.58,.46,.66,.63,.38,.45,.44,.41)
+c_rate<-c(.35,.29,.29,.42,.26,.23,.42,.5,.21,.13,.16,.21)
+sc_rate<-c(.45,.45,.46,.54,.47,.42,.5,.5,.4,.36,.3,.37)
+n<-length(loss)
+
+#Scaling
+#flip<-as.vector(scale(flip))
+#loss<-as.vector(scale(loss))
+#races<-as.vector(scale(races))
+#p_rate<-as.vector(scale(p_rate))
+#c_rate<-as.vector(scale(c_rate))
+#sc_rate<-as.vector(scale(sc_rate))
+
+#Model 1
+data<-list(flip=flip,p_rate=p_rate,c_rate=c_rate,sc_rate=sc_rate,n=n)
+model_string<- textConnection("model{
+for(i in 1:n){
+     flip[i] ~ dnorm(beta1 + beta2*p_rate[i] + beta3*c_rate[i] + beta4*sc_rate[i],tau)
+}
+   tau   ~  dgamma(0.1, 0.1) #Conjugate uninformative prior
+   sigma <- 1/sqrt(tau)
+   beta1 ~  dnorm(0, 0.001) #Univariate Gaussian independent priors for each Beta to counteract colinearity
+   beta2 ~  dnorm(0, 0.001)
+   beta3 ~  dnorm(0, 0.001)
+   beta4 ~  dnorm(0, 0.001)
+ }")
+
+inits<- list(beta1=rnorm(1),beta2=rnorm(1),beta3=rnorm(1),beta4=rnorm(1),tau=10)
+model<-jags.model(model_string,data=data,inits=inits,n.chains=2,quiet=TRUE)
+#Burn-in
+update(model,10000,progress.bar="none")
+#Post burn-in
+params<-c("beta1","beta2","beta3","beta4","sigma")
+samples<- coda.samples(model,variable.names=params,n.iter=20000,progress.bar="none")
+
+summary(samples)
+plot(samples)
+
+#Evaluate correlation of input variables
+mat.data<-c(p_rate,c_rate,sc_rate)
+mat1<-matrix(mat.data,ncol=3,byrow=FALSE)
+colnames(mat1)<-c("Executive","Legislative","Judicial")
+library(corrplot)
+corrplot(cor(mat1),title="Correlation of Approval Ratings Between Branches",addCoef.col=TRUE,tl.srt=60,mar=c(0,0,5,0),tl.col="black")
+
+dic <- dic.samples(model,n.iter=20000,progress.bar="none")
+dic
+
+samples_combined <- rbind(samples[[1]], samples[[2]])
+S <- nrow(samples_combined)
+n <- length(flip)
+mean_obs <- mean(flip)
+max_obs <- max(flip)
+library(Rlab)
+skew_obs <- skew(flip)
+
+D <- matrix(0,S,3)
+Yp <- c(length=n)
+for (s in 1:S){
+   beta1_est <- samples_combined[s,1]
+   beta2_est <- samples_combined[s,2]
+   beta3_est <- samples_combined[s,3]
+   beta4_est <- samples_combined[s,4]
+   sigma_est <- samples_combined[s,5]
+  for (i in 1:n){
+     Yp[i] <- rnorm(1,beta1_est + beta2_est*p_rate[i] + beta3_est*c_rate[i] + beta4_est*sc_rate[i], sigma_est)}
+  D[s,1] <- mean(Yp)
+  D[s,2] <- max(Yp)
+  D[s,3] <- skew(Yp)
+}     
+
+hist(D[,1], breaks=20, xlim=c(-20,70), main="Histogram of Mean", xlab="Mean")
+abline(v=mean_obs, col="blue")
+
+hist(D[,2], breaks=20, xlim=c(0,160), main="Histogram of Max", xlab="Max")
+abline(v=max_obs, col="blue")
+
+hist(D[,3], breaks=20, xlim=c(-10,10), main="Histogram of Skewness", xlab="Skewness")
+abline(v=skew_obs, col="blue")
+```
+
+```{r}
+model_string8 <- textConnection("model{
+   # Likelihood
+    for(i in 1:n){
+      loss[i]        ~ dbinom(p[i], races[i])
+      probit(p[i]) <- beta[1] + beta[2]*p_rate[i] + beta[3]*c_rate[i] + beta[4]*sc_rate[i]
+    }
+   # Priors
+    beta[1] ~ dbeta(0.1,0.1)
+    beta[2] ~ dbeta(0.1,0.1)
+    beta[3] ~ dbeta(0.1,0.1)
+    beta[4] ~ dbeta(0.1,0.1)
+ }")
+
+model8 <- jags.model(model_string8,data = data2, n.chains=2,quiet=TRUE)
+update(model8, 10000, progress.bar="none")
+samples8 <- coda.samples(model8, variable.names=params2, thin=5, n.iter=20000, progress.bar="none")
+
+summary(samples8)
+plot(samples8)
+```
+
+```{r}
+ESS8 <- effectiveSize(samples8)
+ESS8[which.min(ESS8)]
+
+GEL8 <- gelman.diag(samples8)
+GEL8
+
+geweke8 <- geweke.diag(samples8)
+geweke8
+
+stat8 <- summary(samples8)["statistics"]
+stat8
+
+quant8 <- summary(samples8)["quantiles"]
+quant8
+
+#Calculate DIC
+DIC8 <- dic.samples(model8,n.iter=20000,n.thin=10)
+DIC8
+```
+
